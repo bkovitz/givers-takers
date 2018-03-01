@@ -1,6 +1,6 @@
 (defproject farg/givers-takers "0.1.0-SNAPSHOT"
   :description "Evolutionary simulation of Giver/Taker species"
-  :url "http://example.com/FIXME"
+  :url "https://github.com/bkovitz/givers-takers"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[better-cond "1.0.1"]
