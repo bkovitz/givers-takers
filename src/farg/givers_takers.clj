@@ -58,7 +58,7 @@
 
 (defn init-organisms [{:keys [world-size num-init-orgs] :as world}]
   (let [organisms (->> (lazy-random-xy-coords world-size)
-                    (map (fn [[x y]] {:g 0.0 :loc [x y]}))
+                    (map (fn [[x y]] {:g 0.5 :loc [x y]}))
                     (take num-init-orgs))]
     (assoc world :organisms (index-by :loc organisms))))
 
@@ -80,8 +80,7 @@
       (add-centered! claims-matrix one-claim-matrix (:loc o)))
     (assoc world :claims-matrix claims-matrix)))
 
-(defn absorb-resources [{:keys [world-size organisms claims-matrix claim-amt
-                                sunlight-per-cell]
+(defn absorb-resources [{:keys [claims-matrix claim-amt sunlight-per-cell]
                          :as world}]
   (let [one-claim-matrix (make-one-claim-matrix claim-amt)]
     (S/transform [:organisms S/MAP-VALS]
@@ -102,6 +101,36 @@
                     (m/index-seq one-claim-matrix)))))
     world)))
 
+(defn givers [world]
+  (S/select [:organisms S/MAP-VALS (S/selected? [:phenotype (S/pred= :giver)])]
+    world))
+
+(defn neighbors [{:keys [world-size] :as world} loc]
+  (let [z (m/zero-array [world-size world-size])
+        xlat (xlat-coord-f z radial-decay-matrix loc)]
+    (for [xy (m/index-seq radial-decay-matrix)
+          :when (not= [2 2] xy)
+          :let [organism (S/select-one [:organisms (S/keypath (xlat xy))]
+                                       world)]
+          :when organism]
+      organism)))
+
+(defn organisms-at [locs]
+  (S/comp-paths [:organisms (apply S/multi-path (map #(S/keypath %) locs))]))
+
+(defn give-resources [world]
+  (reduce (fn [world {:keys [absorbed loc] :as giver}]
+            (cond
+              :let [neighbor-locs (map :loc (neighbors world loc))]
+              (empty? neighbor-locs) world
+              :let [give-amt (/ absorbed (count neighbor-locs))]
+              (S/transform (organisms-at neighbor-locs)
+                           (fn [neighbor]
+                             (update neighbor :bonus (fnil + 0.0) give-amt))
+                           world)))
+          world
+          (givers world)))
+
 ;;; printing
 
 (defn just-g [{:keys [organisms]} x y]
@@ -119,6 +148,13 @@
        "  - "
     (format "%1.2f" (:absorbed o))))
 
+(defn just-bonus [{:keys [organisms]} x y]
+  (cond
+    :let [o (get organisms [x y])]
+    (nil? o)
+       "  - "
+    (format "%1.2f" (get o :bonus 0.0))))
+
 (defn print-world [{:keys [world-size] :as world}]
   (doseq [y (reverse (range world-size))]
     (println (clojure.string/join \space
@@ -135,6 +171,11 @@
     (println (clojure.string/join \space
                (map #(just-absorbed world % y) (range world-size))))))
 
+(defn print-bonuses [{:keys [world-size organisms] :as world}]
+  (doseq [y (reverse (range world-size))]
+    (println (clojure.string/join \space
+               (map #(just-bonus world % y) (range world-size))))))
+
 ;;; running
 
 (def default-opts {:world-size 10 :num-init-orgs 5 :collective-gain 2.0
@@ -150,9 +191,12 @@
       (develop)
       (claim-resources)
       (absorb-resources)
+      (give-resources)
       -- (print-world world)
       -- (println)
       -- (print-claims world)
       -- (println)
       -- (print-absorbed world)
+      -- (println)
+      -- (print-bonuses world)
       ))))
